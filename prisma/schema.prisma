@@ -1,0 +1,241 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum Currency {
+  XOF  // FCFA
+  EUR
+  USD
+  GNF
+  XAF
+}
+
+enum Period {
+  DAY
+  WEEK
+  MONTH
+  QUARTER
+  SEMESTER
+  YEAR
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum SubscriptionPlan {
+  FREE
+  PREMIUM
+  FAMILY
+}
+
+// ─── USER ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id                String           @id @db.Uuid
+  email             String           @unique
+  phone             String?          @unique
+  firstName         String
+  lastName          String
+  currency          Currency         @default(XOF)
+  timezone          String           @default("Africa/Abidjan")
+  fcmToken          String?
+  plan              SubscriptionPlan @default(FREE)
+  planExpiresAt     DateTime?
+  reminderEnabled   Boolean          @default(true)
+  reminder1Time     String           @default("12:00")
+  reminder2Time     String           @default("20:40")
+  reminder3Time     String           @default("08:30")
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  // Relations
+  budgets               Budget[]
+  expenses              Expense[]
+  specialExpenses       SpecialExpense[]
+  goals                 SavingGoal[]
+  notifications         Notification[]
+  categories            Category[]
+  investmentAdviceCache InvestmentAdviceCache[]
+
+  @@map("users")
+}
+
+// ─── CATEGORY ─────────────────────────────────────────────────────────────────
+
+model Category {
+  id        String   @id @default(cuid())
+  userId    String?  @db.Uuid
+  name      String
+  icon      String?
+  color     String?
+  isSystem  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user             User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses         Expense[]
+  budgetCategories BudgetCategory[]
+
+  @@index([userId])
+  @@map("categories")
+}
+
+// ─── BUDGET ───────────────────────────────────────────────────────────────────
+
+model Budget {
+  id          String    @id @default(cuid())
+  userId      String    @db.Uuid
+  month       Int
+  year        Int
+  totalAmount Decimal   @db.Decimal(12, 2)
+  currency    Currency  @default(XOF)
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories  BudgetCategory[]
+  expenses    Expense[]
+
+  @@unique([userId, month, year])
+  @@map("budgets")
+}
+
+model BudgetCategory {
+  id         String   @id @default(cuid())
+  budgetId   String
+  categoryId String
+  amount     Decimal  @db.Decimal(12, 2)
+  spent      Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  budget     Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  @@unique([budgetId, categoryId])
+  @@map("budget_categories")
+}
+
+// ─── EXPENSE ──────────────────────────────────────────────────────────────────
+
+model Expense {
+  id          String   @id @default(cuid())
+  userId      String   @db.Uuid
+  budgetId    String?
+  categoryId  String
+  amount      Decimal  @db.Decimal(12, 2)
+  description String?
+  date        DateTime
+  isRecurring Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  budget      Budget?  @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  category    Category @relation(fields: [categoryId], references: [id])
+
+  @@index([userId, date])
+  @@index([userId, categoryId])
+  @@map("expenses")
+}
+
+// ─── SPECIAL EXPENSE ──────────────────────────────────────────────────────────
+
+model SpecialExpense {
+  id               String    @id @default(cuid())
+  userId           String    @db.Uuid
+  name             String
+  estimatedAmount  Decimal   @db.Decimal(12, 2)
+  actualAmount     Decimal?  @db.Decimal(12, 2)
+  scheduledDate    DateTime
+  remindDaysBefore Int[]     @default([7, 3, 1])
+  isCompleted      Boolean   @default(false)
+  completedAt      DateTime?
+  note             String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, scheduledDate])
+  @@map("special_expenses")
+}
+
+// ─── SAVING GOAL ──────────────────────────────────────────────────────────────
+
+model SavingGoal {
+  id            String     @id @default(cuid())
+  userId        String     @db.Uuid
+  name          String
+  targetAmount  Decimal    @db.Decimal(12, 2)
+  currentAmount Decimal    @default(0) @db.Decimal(12, 2)
+  monthlyTarget Decimal?   @db.Decimal(12, 2)
+  deadline      DateTime
+  status        GoalStatus @default(ACTIVE)
+  icon          String?
+  color         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contributions GoalContribution[]
+
+  @@index([userId, status])
+  @@map("saving_goals")
+}
+
+model GoalContribution {
+  id        String     @id @default(cuid())
+  goalId    String
+  amount    Decimal    @db.Decimal(12, 2)
+  note      String?
+  date      DateTime
+  createdAt DateTime   @default(now())
+
+  goal      SavingGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@map("goal_contributions")
+}
+
+// ─── INVESTMENT ADVICE CACHE ──────────────────────────────────────────────────
+
+model InvestmentAdviceCache {
+  id        String   @id @default(cuid())
+  userId    String   @db.Uuid
+  provider  String   // anthropic | google | groq
+  result    Json     // réponse complète de l'IA
+  cachedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@map("investment_advice_cache")
+}
+
+// ─── NOTIFICATION ─────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @db.Uuid
+  title     String
+  body      String
+  type      String   // reminder | alert | advice | goal
+  isRead    Boolean  @default(false)
+  sentAt    DateTime @default(now())
+  data      Json?
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
