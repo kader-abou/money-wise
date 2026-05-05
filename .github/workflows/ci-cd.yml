@@ -19,7 +19,7 @@ jobs:
           bun-version: latest
 
       - name: Installer les dépendances
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Générer le client Prisma
         run: bunx prisma generate
@@ -42,7 +42,7 @@ jobs:
           bun-version: latest
 
       - name: Installer les dépendances
-        run: bun install --frozen-lockfile
+        run: bun install
 
       # ── Prisma ──────────────────────────────────────────────────────────────
       # generate doit tourner AVANT le build pour que les types @prisma/client
