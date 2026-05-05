@@ -44,9 +44,13 @@ jobs:
       - name: Installer les dépendances
         run: bun install --frozen-lockfile
 
-      # ── Migrations ──────────────────────────────────────────────────────────
-      # Utilise DIRECT_URL (port 5432, connexion directe sans PgBouncer)
-      # PgBouncer (port 6543) ne supporte pas les commandes DDL des migrations
+      # ── Prisma ──────────────────────────────────────────────────────────────
+      # generate doit tourner AVANT le build pour que les types @prisma/client
+      # soient disponibles pour TypeScript
+      - name: Générer le client Prisma
+        run: bunx prisma generate
+
+      # Utilise DIRECT_URL (port 5432) — PgBouncer (6543) bloque les migrations
       - name: Appliquer les migrations
         run: bunx prisma migrate deploy
         env:
