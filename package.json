@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "bun --watch src/server.ts",
-    "build": "bunx prisma generate && tsc",
+    "build": "bunx tsc",
     "start": "bun dist/server.js",
     "db:generate": "bunx prisma generate",
     "db:migrate": "bunx prisma migrate dev",

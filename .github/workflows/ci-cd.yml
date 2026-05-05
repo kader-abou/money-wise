@@ -1,0 +1,110 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── Job 1 : Tests (tourne sur toutes les PRs et pushes) ──────────────────
+  ci:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Installer les dépendances
+        run: bun install --frozen-lockfile
+
+      - name: Générer le client Prisma
+        run: bunx prisma generate
+
+      - name: Lancer les tests
+        run: bun run test
+
+  # ─── Job 2 : Deploy (uniquement sur push vers main) ───────────────────────
+  deploy:
+    name: Deploy
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Installer les dépendances
+        run: bun install --frozen-lockfile
+
+      # ── Migrations ──────────────────────────────────────────────────────────
+      # Utilise DIRECT_URL (port 5432, connexion directe sans PgBouncer)
+      # PgBouncer (port 6543) ne supporte pas les commandes DDL des migrations
+      - name: Appliquer les migrations
+        run: bunx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+
+      # ── Build TypeScript ────────────────────────────────────────────────────
+      - name: Build
+        run: bun run build
+
+      # ── Déploiement ─────────────────────────────────────────────────────────
+      # Décommente la section qui correspond à ta plateforme :
+
+      # --- Railway ---
+      # - name: Deploy sur Railway
+      #   uses: bervProject/railway-deploy@main
+      #   with:
+      #     railway_token: ${{ secrets.RAILWAY_TOKEN }}
+      #     service: moneywise-api
+
+      # --- Render (webhook) ---
+      # - name: Deploy sur Render
+      #   run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+
+      #--- Fly.io ---
+      - name: Deploy sur Fly.io
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      # --- VPS avec Docker ---
+      # - name: Build & Push Docker image
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     push: true
+      #     tags: ghcr.io/${{ github.repository }}:latest
+      # - name: Deploy via SSH
+      #   uses: appleboy/ssh-action@v1
+      #   with:
+      #     host: ${{ secrets.SSH_HOST }}
+      #     username: ${{ secrets.SSH_USER }}
+      #     key: ${{ secrets.SSH_KEY }}
+      #     script: |
+      #       docker pull ghcr.io/${{ github.repository }}:latest
+      #       docker compose up -d --no-deps api
+
+    env:
+      NODE_ENV: production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+      FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+      FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
