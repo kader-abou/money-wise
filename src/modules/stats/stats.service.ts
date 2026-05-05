@@ -110,7 +110,7 @@ export class StatsService {
       }
     }
 
-    const advice = this.generateAdvice(distribution, total, budgetComparison)
+    const advice = this.generateAdvice(distribution, budgetComparison)
 
     return { period, from, to, total, count: expenses.length, distribution, budgetComparison, advice }
   }
@@ -150,8 +150,8 @@ export class StatsService {
    * Retourne les N dépenses les plus élevées pour une période donnée.
    * @param limit - Nombre de dépenses à retourner (défaut : 5)
    */
-  async getTopExpenses(userId: string, period: Period, limit: number = 5) {
-    const { from, to } = getDateRange(period)
+  async getTopExpenses(userId: string, period: Period, limit: number = 5, date?: Date) {
+    const { from, to } = getDateRange(period, date)
 
     const expenses = await this.prisma.expense.findMany({
       where: { userId, date: { gte: from, lte: to } },
@@ -171,7 +171,6 @@ export class StatsService {
    */
   private generateAdvice(
     distribution: { name: string; amount: number; percentage: number }[],
-    total: number,
     budgetComparison: any,
   ): string[] {
     const advice: string[] = []

@@ -1,6 +1,7 @@
 import { z } from 'zod/v4'
 import { wrapResponse, CategoryData } from '../../utils/schema.js'
 
+/** Corps de la requête de création d'une dépense */
 export const CreateExpenseSchema = z.object({
   amount: z.number().positive('Le montant doit être positif'),
   categoryId: z.string().min(1, 'La catégorie est requise'),
@@ -10,6 +11,7 @@ export const CreateExpenseSchema = z.object({
   isRecurring: z.boolean().optional(),
 })
 
+/** Corps de la requête de modification d'une dépense (tous les champs optionnels) */
 export const UpdateExpenseSchema = z.object({
   amount: z.number().positive().optional(),
   categoryId: z.string().min(1).optional(),
@@ -18,10 +20,12 @@ export const UpdateExpenseSchema = z.object({
   isRecurring: z.boolean().optional(),
 })
 
+/** Paramètres d'URL contenant l'identifiant de la dépense */
 export const ExpenseParamsSchema = z.object({
   id: z.string().min(1, 'ID invalide'),
 })
 
+/** Query string pour la liste des dépenses : pagination, filtres par catégorie, date, budget */
 export const ExpenseQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -33,6 +37,7 @@ export const ExpenseQuerySchema = z.object({
 
 // ─── Response schemas ─────────────────────────────────────────────────────────
 
+/** Schéma d'une dépense dans les réponses API */
 export const ExpenseData = z.object({
   id: z.string(),
   userId: z.string(),
@@ -47,6 +52,7 @@ export const ExpenseData = z.object({
   updatedAt: z.string(),
 })
 
+/** Réponse paginée de la liste des dépenses */
 export const ExpenseListResponse = wrapResponse(
   z.object({
     expenses: z.array(ExpenseData),
@@ -59,8 +65,10 @@ export const ExpenseListResponse = wrapResponse(
   })
 )
 
+/** Réponse contenant une seule dépense */
 export const ExpenseResponse = wrapResponse(ExpenseData)
 
+/** Réponse de création : dépense créée + alerte budget éventuelle */
 export const CreateExpenseResponse = wrapResponse(
   z.object({
     expense: ExpenseData,
@@ -68,6 +76,11 @@ export const CreateExpenseResponse = wrapResponse(
   })
 )
 
+/** Type TypeScript inféré du schéma de création de dépense */
 export type CreateExpenseInput = z.infer<typeof CreateExpenseSchema>
+
+/** Type TypeScript inféré du schéma de modification de dépense */
 export type UpdateExpenseInput = z.infer<typeof UpdateExpenseSchema>
+
+/** Type TypeScript inféré des filtres de la liste des dépenses */
 export type ExpenseQueryInput = z.infer<typeof ExpenseQuerySchema>

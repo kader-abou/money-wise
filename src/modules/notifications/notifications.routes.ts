@@ -8,6 +8,8 @@ import { wrapResponse, r401, r404 } from '../../utils/schema.js'
 const ParamsSchema = z.object({ id: z.string() })
 const QuerySchema = z.object({
   unread: z.enum(['true', 'false']).optional().describe('true = non lues uniquement'),
+  page:  z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
 })
 
 const NotificationData = z.object({
@@ -21,7 +23,15 @@ const NotificationData = z.object({
   data: z.any().nullable().describe('Données additionnelles liées à la notification'),
 })
 
-const NotificationListResponse = wrapResponse(z.array(NotificationData))
+const NotificationListResponse = wrapResponse(z.object({
+  notifications: z.array(NotificationData),
+  meta: z.object({
+    total: z.number().describe('Nombre total de notifications'),
+    page: z.number(),
+    limit: z.number(),
+    pages: z.number().describe('Nombre total de pages'),
+  }),
+}))
 const NotificationResponse = wrapResponse(NotificationData)
 const UnreadCountResponse = wrapResponse(
   z.object({ count: z.number().describe('Nombre de notifications non lues (valeur du badge app)') })
@@ -38,14 +48,16 @@ const notificationsRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       tags: ['Notifications'],
       summary: 'Lister les notifications',
-      description: 'Retourne toutes les notifications triées de la plus récente. Filtrables par statut lu/non lu.',
+      description: 'Retourne les notifications paginées, triées de la plus récente. Filtrables par statut lu/non lu.',
       security: [{ bearerAuth: [] }],
       querystring: QuerySchema,
       response: { 200: NotificationListResponse, 401: r401 },
     },
     handler: async (request, reply) => {
-      const { unread } = request.query as z.infer<typeof QuerySchema>
-      return reply.send(ok(await service.findAll(request.user.sub, unread === 'true' ? true : undefined)))
+      const { unread, page, limit } = request.query as z.infer<typeof QuerySchema>
+      return reply.send(ok(
+        await service.findAll(request.user.sub, unread === 'true' ? true : undefined, page, limit)
+      ))
     },
   })
 

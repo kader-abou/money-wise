@@ -1,6 +1,7 @@
 import { z } from 'zod/v4'
 import { wrapResponse } from '../../utils/schema.js'
 
+/** Corps de la requête de création d'un objectif d'épargne */
 export const CreateGoalSchema = z.object({
   name: z.string().min(2).max(100),
   targetAmount: z.number().positive(),
@@ -15,6 +16,7 @@ export const CreateGoalSchema = z.object({
     .optional(),
 })
 
+/** Corps de la requête de modification d'un objectif (tous les champs optionnels) */
 export const UpdateGoalSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   targetAmount: z.number().positive().optional(),
@@ -24,12 +26,14 @@ export const UpdateGoalSchema = z.object({
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
 })
 
+/** Corps de la requête d'ajout d'un versement sur un objectif */
 export const AddContributionSchema = z.object({
   amount: z.number().positive('Le montant doit être positif'),
   date: z.coerce.date().default(() => new Date()),
   note: z.string().max(500).optional(),
 })
 
+/** Corps de la requête de bilan mensuel d'un objectif */
 export const MonthlyCheckSchema = z.object({
   goalId: z.string().cuid(),
   isAchieved: z.boolean(),
@@ -37,12 +41,14 @@ export const MonthlyCheckSchema = z.object({
   note: z.string().max(500).optional(),
 })
 
+/** Paramètres d'URL contenant l'identifiant de l'objectif */
 export const GoalParamsSchema = z.object({
   id: z.string().cuid('ID invalide'),
 })
 
 // ─── Response schemas ─────────────────────────────────────────────────────────
 
+/** Schéma d'un versement individuel sur un objectif */
 const ContributionData = z.object({
   id: z.string().describe('Identifiant unique du versement'),
   goalId: z.string().describe("ID de l'objectif parent"),
@@ -52,6 +58,7 @@ const ContributionData = z.object({
   createdAt: z.string().describe('Date de création ISO 8601'),
 })
 
+/** Schéma complet d'un objectif d'épargne avec progression et versements */
 export const GoalData = z.object({
   id: z.string().describe("Identifiant unique de l'objectif"),
   userId: z.string().describe("UUID de l'utilisateur"),
@@ -71,6 +78,7 @@ export const GoalData = z.object({
   updatedAt: z.string(),
 })
 
+/** Schéma d'un élément du récapitulatif mensuel d'objectif */
 const RecapItemData = z.object({
   id: z.string(),
   name: z.string(),
@@ -81,16 +89,28 @@ const RecapItemData = z.object({
   advice: z.string().nullable().describe('Conseil personnalisé si objectif non atteint'),
 })
 
+/** Réponse contenant la liste de tous les objectifs actifs */
 export const GoalListResponse = wrapResponse(z.array(GoalData))
+
+/** Réponse contenant un seul objectif */
 export const GoalResponse = wrapResponse(GoalData)
+
+/** Réponse après ajout d'un versement : objectif mis à jour + message de félicitations */
 export const GoalContributeResponse = wrapResponse(
   z.object({
     goal: GoalData,
     message: z.string().describe('Félicitations si objectif atteint, confirmation sinon'),
   })
 )
+
+/** Réponse du récapitulatif mensuel de tous les objectifs avec versements */
 export const GoalRecapResponse = wrapResponse(z.array(RecapItemData))
 
+/** Type TypeScript inféré du schéma de création d'objectif */
 export type CreateGoalInput = z.infer<typeof CreateGoalSchema>
+
+/** Type TypeScript inféré du schéma de modification d'objectif */
 export type UpdateGoalInput = z.infer<typeof UpdateGoalSchema>
+
+/** Type TypeScript inféré du schéma d'ajout de versement */
 export type AddContributionInput = z.infer<typeof AddContributionSchema>

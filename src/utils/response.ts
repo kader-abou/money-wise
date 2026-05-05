@@ -32,7 +32,7 @@ export function getBudgetStatus(spent: number, total: number): BudgetStatus {
   if (ratio >= 1) return 'black'
   if (ratio >= 0.8) return 'red'
   if (ratio >= 0.5) return 'orange'
-  if (ratio >= 0.5) return 'yellow'
+  if (ratio >= 0.2) return 'yellow'
   return 'green'
 }
 

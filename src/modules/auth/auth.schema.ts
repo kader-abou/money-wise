@@ -1,5 +1,6 @@
 import { z } from 'zod/v4'
 
+/** Corps de la requête d'inscription : email, mot de passe, prénom/nom, devise */
 export const RegisterSchema = z.object({
   email: z.string().email('Email invalide'),
   phone: z
@@ -16,16 +17,19 @@ export const RegisterSchema = z.object({
   currency: z.enum(['XOF', 'EUR', 'USD', 'GNF', 'XAF']).default('XOF'),
 })
 
+/** Corps de la requête de connexion : email, mot de passe, token FCM optionnel */
 export const LoginSchema = z.object({
   email: z.string().email('Email invalide'),
   password: z.string().min(1, 'Mot de passe requis'),
   fcmToken: z.string().optional(),
 })
 
+/** Corps de la requête de renouvellement de session via refresh token */
 export const RefreshTokenSchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token requis'),
 })
 
+/** Corps de la requête de changement de mot de passe (authentifié) */
 export const ChangePasswordSchema = z
   .object({
     currentPassword: z.string().min(1),
@@ -41,6 +45,7 @@ export const ChangePasswordSchema = z
     path: ['confirmPassword'],
   })
 
+/** Corps de la requête de mise à jour du profil utilisateur (tous les champs optionnels) */
 export const UpdateProfileSchema = z.object({
   firstName: z.string().min(2).max(50).optional(),
   lastName: z.string().min(2).max(50).optional(),
@@ -53,8 +58,17 @@ export const UpdateProfileSchema = z.object({
   reminder3Time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'Format HH:mm requis').optional(),
 })
 
+/** Type TypeScript inféré du schéma d'inscription */
 export type RegisterInput = z.infer<typeof RegisterSchema>
+
+/** Type TypeScript inféré du schéma de connexion */
 export type LoginInput = z.infer<typeof LoginSchema>
+
+/** Type TypeScript inféré du schéma de refresh token */
 export type RefreshTokenInput = z.infer<typeof RefreshTokenSchema>
+
+/** Type TypeScript inféré du schéma de changement de mot de passe */
 export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>
+
+/** Type TypeScript inféré du schéma de mise à jour du profil */
 export type UpdateProfileInput = z.infer<typeof UpdateProfileSchema>

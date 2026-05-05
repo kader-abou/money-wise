@@ -45,6 +45,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       stream: prettyStream,
     },
     disableRequestLogging: true,
+    requestTimeout: 30_000,
   }).withTypeProvider<ZodTypeProvider>()
 
   fastify.setValidatorCompiler(validatorCompiler)
@@ -134,7 +135,7 @@ export async function buildApp(): Promise<FastifyInstance> {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'Données invalides',
-          details: error.flatten().fieldErrors,
+          details: z.flattenError(error).fieldErrors,
         },
       })
     }

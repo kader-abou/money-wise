@@ -17,6 +17,7 @@ const TrendQuerySchema = z.object({
 const TopExpensesQuerySchema = z.object({
   period: PeriodSchema.default('month'),
   limit: z.coerce.number().min(1).max(20).default(5).describe('Nombre de dépenses à retourner (max 20)'),
+  date: z.coerce.date().optional().describe('Date de référence (défaut: aujourd\'hui)'),
 })
 
 const DistributionItem = z.object({
@@ -114,8 +115,8 @@ const statsRoutes: FastifyPluginAsync = async (fastify) => {
       response: { 200: TopExpensesResponse, 401: r401 },
     },
     handler: async (request, reply) => {
-      const { period, limit } = request.query as z.infer<typeof TopExpensesQuerySchema>
-      return reply.send(ok(await service.getTopExpenses(request.user.sub, period, limit)))
+      const { period, limit, date } = request.query as z.infer<typeof TopExpensesQuerySchema>
+      return reply.send(ok(await service.getTopExpenses(request.user.sub, period, limit, date)))
     },
   })
 }

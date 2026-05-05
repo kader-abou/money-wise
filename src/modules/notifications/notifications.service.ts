@@ -5,17 +5,32 @@ export class NotificationsService {
   constructor(private prisma: PrismaClient) {}
 
   /**
-   * Retourne toutes les notifications d'un utilisateur, triées de la plus récente à la plus ancienne.
+   * Retourne les notifications d'un utilisateur paginées, triées de la plus récente à la plus ancienne.
    * @param unreadOnly - Si true, retourne uniquement les notifications non lues
    */
-  async findAll(userId: string, unreadOnly?: boolean) {
-    return this.prisma.notification.findMany({
-      where: {
-        userId,
-        ...(unreadOnly ? { isRead: false } : {}),
+  async findAll(userId: string, unreadOnly?: boolean, page = 1, limit = 20) {
+    const where = { userId, ...(unreadOnly ? { isRead: false } : {}) }
+    const skip = (page - 1) * limit
+
+    const [notifications, total] = await Promise.all([
+      this.prisma.notification.findMany({
+        where,
+        orderBy: { sentAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.notification.count({ where }),
+    ])
+
+    return {
+      notifications,
+      meta: {
+        total,
+        page,
+        limit,
+        pages: Math.ceil(total / limit),
       },
-      orderBy: { sentAt: 'desc' },
-    })
+    }
   }
 
   /**

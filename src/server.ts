@@ -8,7 +8,6 @@ const DIM    = '\x1b[2m'
 const GREEN  = '\x1b[32m'
 const CYAN   = '\x1b[36m'
 const YELLOW = '\x1b[33m'
-const BLUE   = '\x1b[34m'
 const WHITE  = '\x1b[97m'
 
 function banner(port: number) {
@@ -29,6 +28,16 @@ function banner(port: number) {
 
 async function main() {
   const app = await buildApp()
+
+  const shutdown = async (signal: string) => {
+    console.log(`\n${DIM}  ${signal} reçu — arrêt propre en cours...${RESET}`)
+    await app.close()
+    console.log(`${DIM}  Serveur arrêté.${RESET}\n`)
+    process.exit(0)
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
+  process.on('SIGINT',  () => shutdown('SIGINT'))
 
   try {
     await app.listen({ port: env.PORT, host: env.HOST })

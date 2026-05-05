@@ -1,18 +1,21 @@
 import { z } from 'zod/v4'
 import { wrapResponse } from '../../utils/schema.js'
 
+/** Corps de la requête de création d'une dépense planifiée */
 export const CreateSpecialExpenseSchema = z.object({
   name: z.string().min(2),
   estimatedAmount: z.number().positive(),
-  scheduledDate: z.string().datetime(),
+  scheduledDate: z.iso.datetime(),
   remindDaysBefore: z.array(z.number().int().positive())
     .default([7, 3, 1])
     .describe('Nombre de jours avant la date prévue où envoyer un rappel (ex: [7, 3, 1])'),
   note: z.string().optional(),
 })
 
+/** Corps de la requête de modification d'une dépense planifiée (tous les champs optionnels) */
 export const UpdateSpecialExpenseSchema = CreateSpecialExpenseSchema.partial()
 
+/** Corps de la requête de marquage d'une dépense comme complétée */
 export const MarkCompletedSchema = z.object({
   actualAmount: z.number().positive().optional().describe('Montant réellement payé (si différent de l\'estimation)'),
   note: z.string().optional(),
@@ -20,6 +23,7 @@ export const MarkCompletedSchema = z.object({
 
 // ─── Response schemas ─────────────────────────────────────────────────────────
 
+/** Schéma complet d'une dépense planifiée dans les réponses API */
 export const SpecialExpenseData = z.object({
   id: z.string(),
   userId: z.string(),
@@ -35,9 +39,17 @@ export const SpecialExpenseData = z.object({
   updatedAt: z.string(),
 })
 
+/** Réponse contenant la liste de toutes les dépenses planifiées */
 export const SpecialExpenseListResponse = wrapResponse(z.array(SpecialExpenseData))
+
+/** Réponse contenant une seule dépense planifiée */
 export const SpecialExpenseResponse = wrapResponse(SpecialExpenseData)
 
+/** Type TypeScript inféré du schéma de création de dépense planifiée */
 export type CreateSpecialExpenseInput = z.infer<typeof CreateSpecialExpenseSchema>
+
+/** Type TypeScript inféré du schéma de modification de dépense planifiée */
 export type UpdateSpecialExpenseInput = z.infer<typeof UpdateSpecialExpenseSchema>
+
+/** Type TypeScript inféré du schéma de marquage comme complété */
 export type MarkCompletedInput = z.infer<typeof MarkCompletedSchema>
