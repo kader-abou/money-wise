@@ -8,8 +8,6 @@ primary_region = 'cdg'
 
 [build]
 
-[deploy]
-  release_command = 'bunx prisma migrate deploy'
 
 [http_service]
   internal_port = 2026
