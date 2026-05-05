@@ -77,7 +77,7 @@ jobs:
       #--- Fly.io ---
       - name: Deploy sur Fly.io
         uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only --app ${{ secrets.FLY_APP_NAME }}
+      - run: flyctl deploy --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
