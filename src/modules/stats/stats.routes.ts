@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { StatsService } from './stats.service.js'
 import { authenticate } from '../../middlewares/authenticate.js'
+import { requirePremium } from '../../middlewares/requirePremium.js'
 import { ok } from '../../utils/response.js'
 import { z } from 'zod/v4'
 import { wrapResponse, r401, r403 } from '../../utils/schema.js'
@@ -77,15 +78,16 @@ const statsRoutes: FastifyPluginAsync = async (fastify) => {
       querystring: SummaryQuerySchema,
       response: { 200: SummaryResponse, 401: r401, 403: r403 },
     },
+    preHandler: [
+      async (request, reply) => {
+        const { period } = request.query as z.infer<typeof SummaryQuerySchema>
+        if (['quarter', 'semester', 'year'].includes(period)) {
+          return requirePremium(request, reply)
+        }
+      },
+    ],
     handler: async (request, reply) => {
       const { period, date } = request.query as z.infer<typeof SummaryQuerySchema>
-      const premiumPeriods = ['quarter', 'semester', 'year']
-      if (premiumPeriods.includes(period) && request.user.plan === 'FREE') {
-        return reply.status(403).send({
-          success: false,
-          error: { code: 'PREMIUM_REQUIRED', message: 'Les statistiques trimestrielles, semestrielles et annuelles sont réservées aux abonnés Premium.' },
-        })
-      }
       return reply.send(ok(await service.getSummary(request.user.sub, period, date)))
     },
   })

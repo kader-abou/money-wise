@@ -1,10 +1,10 @@
-import cron from 'node-cron'
+import cron, { type ScheduledTask } from 'node-cron'
 import { PrismaClient } from '@prisma/client'
 import { runSpecialExpenseReminders } from './special-expense-reminders.job.js'
 import { runDailyReminders } from './daily-reminders.job.js'
 
 export function startScheduler(prisma: PrismaClient) {
-  const jobs: cron.ScheduledTask[] = []
+  const jobs: ScheduledTask[] = []
 
   // ─── Rappels dépenses spéciales ───────────────────────────────────────────
   // Tourne chaque jour à 7h00

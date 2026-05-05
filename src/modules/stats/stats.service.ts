@@ -121,25 +121,35 @@ export class StatsService {
    * @param months - Nombre de mois à inclure (défaut : 6)
    */
   async getTrend(userId: string, months: number = 6) {
+    // Calcul de la plage globale : du 1er du mois le plus ancien à la fin du mois actuel
+    const now = new Date()
+    const startDate = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1)
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+
+    // Une seule requête pour toute la période
+    const expenses = await this.prisma.expense.findMany({
+      where: { userId, date: { gte: startDate, lte: endDate } },
+      select: { amount: true, date: true },
+    })
+
+    // Agrégation en mémoire par mois
     const result = []
-
     for (let i = months - 1; i >= 0; i--) {
-      const d = new Date()
-      d.setMonth(d.getMonth() - i)
-      const { from, to } = getDateRange('month', d)
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const month = d.getMonth() + 1
+      const year = d.getFullYear()
 
-      const expenses = await this.prisma.expense.findMany({
-        where: { userId, date: { gte: from, lte: to } },
+      const monthExpenses = expenses.filter((e) => {
+        const ed = new Date(e.date)
+        return ed.getMonth() + 1 === month && ed.getFullYear() === year
       })
 
-      const total = expenses.reduce((s, e) => s + Number(e.amount), 0)
-
       result.push({
-        month: from.getMonth() + 1,
-        year: from.getFullYear(),
-        label: from.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }),
-        total,
-        count: expenses.length,
+        month,
+        year,
+        label: d.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' }),
+        total: monthExpenses.reduce((s, e) => s + Number(e.amount), 0),
+        count: monthExpenses.length,
       })
     }
 

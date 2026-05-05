@@ -34,12 +34,23 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 
   const dbUser = await request.server.prisma.user.findUnique({
     where: { id: data.user.id },
-    select: { plan: true },
+    select: { plan: true, planExpiresAt: true },
   })
+
+  let plan = dbUser?.plan ?? 'FREE'
+
+  // Downgrade silencieux si le plan Premium a expiré
+  if (plan !== 'FREE' && dbUser?.planExpiresAt && dbUser.planExpiresAt < new Date()) {
+    plan = 'FREE'
+    request.server.prisma.user.update({
+      where: { id: data.user.id },
+      data: { plan: 'FREE', planExpiresAt: null },
+    }).catch(() => {})
+  }
 
   request.user = {
     sub: data.user.id,
     email: data.user.email!,
-    plan: dbUser?.plan ?? 'FREE',
+    plan,
   }
 }

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { fail } from '../../utils/response.js'
+import { sendPush } from '../../utils/firebase.js'
 
 export class NotificationsService {
   constructor(private prisma: PrismaClient) {}
@@ -84,14 +85,29 @@ export class NotificationsService {
    * @param type - reminder | alert | advice | goal
    */
   async createReminder(userId: string, title: string, body: string, data?: Record<string, unknown>) {
-    return this.prisma.notification.create({
-      data: {
-        userId,
-        title,
-        body,
-        type: 'reminder',
-        data: data ? JSON.parse(JSON.stringify(data)) : undefined,
-      },
-    })
+    const [notification, user] = await Promise.all([
+      this.prisma.notification.create({
+        data: {
+          userId,
+          title,
+          body,
+          type: 'reminder',
+          data: data ? JSON.parse(JSON.stringify(data)) : undefined,
+        },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { fcmToken: true },
+      }),
+    ])
+
+    if (user?.fcmToken) {
+      const pushData = data
+        ? Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)]))
+        : undefined
+      await sendPush(user.fcmToken, title, body, pushData)
+    }
+
+    return notification
   }
 }

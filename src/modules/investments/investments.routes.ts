@@ -1,9 +1,10 @@
 import { FastifyPluginAsync } from 'fastify'
 import { InvestmentsService, type LLMProvider } from './investments.service.js'
 import { authenticate } from '../../middlewares/authenticate.js'
+import { requirePremium } from '../../middlewares/requirePremium.js'
 import { ok } from '../../utils/response.js'
 import { z } from 'zod/v4'
-import { wrapResponse, r401, r422 } from '../../utils/schema.js'
+import { wrapResponse, r401, r403, r422 } from '../../utils/schema.js'
 
 const AdviceQuerySchema = z.object({
   amount:   z.coerce.number().positive('Le montant doit être positif').describe('Montant disponible à investir'),
@@ -45,12 +46,13 @@ const InvestmentAdviceResponse = wrapResponse(
 const investmentsRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new InvestmentsService(fastify.prisma)
   fastify.addHook('preHandler', authenticate)
+  fastify.addHook('preHandler', requirePremium)
 
   fastify.get('/advice', {
     schema: {
       tags: ['Investments'],
-      summary: "Conseils d'investissement personnalisés par IA",
-      description: `Analyse les dépenses (3 derniers mois), objectifs d'épargne et budget de l'utilisateur pour générer des conseils sur mesure.
+      summary: "Conseils d'investissement personnalisés par IA 🔒 Premium",
+      description: `Analyse les dépenses (3 derniers mois), objectifs d'épargne et budget de l'utilisateur pour générer des conseils sur mesure. **Réservé aux abonnés Premium.**
 
 **Providers disponibles :**
 - \`anthropic\` — Claude Opus 4.7 (le plus précis, nécessite ANTHROPIC_API_KEY)
@@ -60,7 +62,7 @@ const investmentsRoutes: FastifyPluginAsync = async (fastify) => {
 Obtenir des clés gratuites : [Groq](https://console.groq.com) · [Google AI](https://aistudio.google.com)`,
       security: [{ bearerAuth: [] }],
       querystring: AdviceQuerySchema,
-      response: { 200: InvestmentAdviceResponse, 400: r422, 401: r401 },
+      response: { 200: InvestmentAdviceResponse, 400: r422, 401: r401, 403: r403 },
     },
     handler: async (request, reply) => {
       const { amount, currency, provider } = request.query as z.infer<typeof AdviceQuerySchema>
