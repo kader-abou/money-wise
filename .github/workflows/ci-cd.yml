@@ -61,41 +61,35 @@ jobs:
         run: bun run build
 
       # ── Déploiement ─────────────────────────────────────────────────────────
-      # Décommente la section qui correspond à ta plateforme :
+      # Décommente UNE SEULE section selon ta plateforme cible.
 
-      # --- Railway ---
-      # - name: Deploy sur Railway
-      #   uses: bervProject/railway-deploy@main
-      #   with:
-      #     railway_token: ${{ secrets.RAILWAY_TOKEN }}
-      #     service: moneywise-api
-
-      # --- Render (webhook) ---
-      # - name: Deploy sur Render
-      #   run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-
-      #--- Fly.io ---
-      - name: Deploy sur Fly.io
-        uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
+      # ┌─ RAILWAY ────────────────────────────────────────────────────────────┐
+      # │ Secrets requis : RAILWAY_TOKEN (depuis railway.app → Account Settings│
+      # │ Fichier de config : railway.toml                                     │
+      # └──────────────────────────────────────────────────────────────────────┘
+      - name: Deploy sur Railway
+        run: |
+          npm install -g @railway/cli@latest
+          railway up --service moneywise-api --detach
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
-      # --- VPS avec Docker ---
-      # - name: Build & Push Docker image
-      #   uses: docker/build-push-action@v5
-      #   with:
-      #     push: true
-      #     tags: ghcr.io/${{ github.repository }}:latest
-      # - name: Deploy via SSH
-      #   uses: appleboy/ssh-action@v1
-      #   with:
-      #     host: ${{ secrets.SSH_HOST }}
-      #     username: ${{ secrets.SSH_USER }}
-      #     key: ${{ secrets.SSH_KEY }}
-      #     script: |
-      #       docker pull ghcr.io/${{ github.repository }}:latest
-      #       docker compose up -d --no-deps api
+      # ┌─ RENDER ─────────────────────────────────────────────────────────────┐
+      # │ Secrets requis : RENDER_DEPLOY_HOOK_URL (depuis Render → Settings →  │
+      # │ Deploy Hooks). Fichier de config : render.yaml                       │
+      # └──────────────────────────────────────────────────────────────────────┘
+      # - name: Deploy sur Render
+      #   run: curl --fail -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+      # ┌─ FLY.IO ─────────────────────────────────────────────────────────────┐
+      # │ Secrets requis : FLY_API_TOKEN. Nécessite une carte bancaire.        │
+      # │ Fichier de config : fly.toml                                         │
+      # └──────────────────────────────────────────────────────────────────────┘
+      # - name: Deploy sur Fly.io
+      #   uses: superfly/flyctl-actions/setup-flyctl@master
+      # - run: flyctl deploy --remote-only
+      #   env:
+      #     FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
     env:
       NODE_ENV: production
