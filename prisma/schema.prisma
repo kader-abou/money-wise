@@ -194,6 +194,7 @@ model GoalContribution {
 
   goal      SavingGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
 
+  @@index([goalId])
   @@map("goal_contributions")
 }
 
@@ -219,13 +220,15 @@ model Notification {
   userId    String   @db.Uuid
   title     String
   body      String
-  type      String   // reminder | alert | advice | goal
-  isRead    Boolean  @default(false)
-  sentAt    DateTime @default(now())
+  type      String    // reminder | alert | advice | goal
+  isRead    Boolean   @default(false)
+  sentAt    DateTime  @default(now())
+  deletedAt DateTime?
   data      Json?
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])
+  @@index([userId, deletedAt])
   @@map("notifications")
 }

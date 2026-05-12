@@ -10,9 +10,38 @@ import { authenticate } from '../../middlewares/authenticate.js'
 import { ok } from '../../utils/response.js'
 import { r401, r404, r422 } from '../../utils/schema.js'
 
+const ExportQuerySchema = z.object({
+  from: z.coerce.date().optional().describe('Date de début (ISO 8601)'),
+  to:   z.coerce.date().optional().describe('Date de fin (ISO 8601)'),
+})
+
 const expensesRoutes: FastifyPluginAsync = async (fastify) => {
   const service = new ExpensesService(fastify.prisma)
   fastify.addHook('preHandler', authenticate)
+
+  fastify.get('/export', {
+    schema: {
+      tags: ['Expenses'],
+      summary: 'Exporter les dépenses en CSV',
+      description: 'Retourne un fichier CSV compatible Excel (UTF-8 BOM) avec toutes les dépenses de la période. Filtrables par date.',
+      security: [{ bearerAuth: [] }],
+      querystring: ExportQuerySchema,
+      response: { 401: r401 },
+    },
+    handler: async (request, reply) => {
+      const { from, to } = request.query as z.infer<typeof ExportQuerySchema>
+      const dbUser = await fastify.prisma.user.findUnique({
+        where: { id: request.user.sub },
+        select: { currency: true },
+      })
+      const csv = await service.exportCsv(request.user.sub, from, to, dbUser?.currency ?? 'XOF')
+      const filename = `depenses-${new Date().toISOString().split('T')[0]}.csv`
+      return reply
+        .header('Content-Type', 'text/csv; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(csv)
+    },
+  })
 
   fastify.get('/', {
     schema: {

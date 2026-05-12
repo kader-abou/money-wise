@@ -3,6 +3,19 @@ import { PrismaClient } from '@prisma/client'
 import { runSpecialExpenseReminders } from './special-expense-reminders.job.js'
 import { runDailyReminders } from './daily-reminders.job.js'
 
+function isDbUnreachable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes('DatabaseNotReachable') || msg.includes("Can't reach database")
+}
+
+function logCronError(job: string, err: unknown) {
+  if (isDbUnreachable(err)) {
+    console.warn(`  [cron] ${job}: base de données inaccessible, nouvelle tentative à la prochaine exécution`)
+  } else {
+    console.error(`  [cron] ${job} error:`, err instanceof Error ? err.message : err)
+  }
+}
+
 export function startScheduler(prisma: PrismaClient) {
   const jobs: ScheduledTask[] = []
 
@@ -11,9 +24,7 @@ export function startScheduler(prisma: PrismaClient) {
   // Vérifie les dépenses spéciales dont la date approche (selon remindDaysBefore)
   jobs.push(
     cron.schedule('0 7 * * *', () => {
-      runSpecialExpenseReminders(prisma).catch((err) =>
-        console.error('[cron] special-expense-reminders error:', err),
-      )
+      runSpecialExpenseReminders(prisma).catch((err) => logCronError('special-expense-reminders', err))
     }, { timezone: 'Africa/Abidjan' }),
   )
 
@@ -22,9 +33,7 @@ export function startScheduler(prisma: PrismaClient) {
   // Léger : ne requête la DB que si l'heure correspond à un horaire de rappel connu
   jobs.push(
     cron.schedule('* * * * *', () => {
-      runDailyReminders(prisma).catch((err) =>
-        console.error('[cron] daily-reminders error:', err),
-      )
+      runDailyReminders(prisma).catch((err) => logCronError('daily-reminders', err))
     }, { timezone: 'Africa/Abidjan' }),
   )
 

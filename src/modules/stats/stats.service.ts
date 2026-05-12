@@ -4,7 +4,10 @@ type Period = 'day' | 'week' | 'month' | 'quarter' | 'semester' | 'year'
 
 /**
  * Calcule la plage de dates [from, to] pour une période donnée.
- * La semaine commence le lundi (standard ISO européen).
+ * La semaine commence le lundi (standard ISO 8601 européen).
+ *
+ * @param period        - Granularité : day | week | month | quarter | semester | year
+ * @param referenceDate - Date de référence (défaut : aujourd'hui)
  */
 function getDateRange(period: Period, referenceDate: Date = new Date()) {
   const d = new Date(referenceDate)
@@ -56,9 +59,17 @@ export class StatsService {
   constructor(private prisma: PrismaClient) {}
 
   /**
-   * Retourne un résumé complet des dépenses pour une période donnée :
-   * total, répartition par catégorie (avec nom, icône, couleur, %), comparaison budget (mois uniquement),
-   * et conseils automatiques basés sur les seuils de dépenses.
+   * Retourne un résumé complet des dépenses pour une période donnée.
+   *
+   * Contient :
+   * - Total dépensé et nombre de transactions
+   * - Répartition par catégorie (montant + % du total) triée par montant décroissant
+   * - Comparaison avec le budget du mois (uniquement si `period === 'month'`)
+   * - Conseils automatiques basés sur les seuils de dépenses
+   *
+   * @param userId - UUID de l'utilisateur connecté
+   * @param period - Granularité de la période
+   * @param date   - Date de référence (défaut : aujourd'hui)
    */
   async getSummary(userId: string, period: Period, date?: Date) {
     const { from, to } = getDateRange(period, date)
@@ -117,22 +128,22 @@ export class StatsService {
 
   /**
    * Retourne l'évolution mensuelle des dépenses sur N mois glissants.
+   * Optimisé : une seule requête DB pour toute la période, agrégation en mémoire.
    * Utile pour afficher un graphique de tendance dans l'app.
-   * @param months - Nombre de mois à inclure (défaut : 6)
+   *
+   * @param userId  - UUID de l'utilisateur connecté
+   * @param months  - Nombre de mois à inclure (défaut : 6)
    */
   async getTrend(userId: string, months: number = 6) {
-    // Calcul de la plage globale : du 1er du mois le plus ancien à la fin du mois actuel
     const now = new Date()
     const startDate = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1)
     const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
 
-    // Une seule requête pour toute la période
     const expenses = await this.prisma.expense.findMany({
       where: { userId, date: { gte: startDate, lte: endDate } },
       select: { amount: true, date: true },
     })
 
-    // Agrégation en mémoire par mois
     const result = []
     for (let i = months - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
@@ -157,8 +168,12 @@ export class StatsService {
   }
 
   /**
-   * Retourne les N dépenses les plus élevées pour une période donnée.
-   * @param limit - Nombre de dépenses à retourner (défaut : 5)
+   * Retourne les N dépenses les plus élevées pour une période et une date données.
+   *
+   * @param userId  - UUID de l'utilisateur connecté
+   * @param period  - Granularité de la période
+   * @param limit   - Nombre de dépenses à retourner (défaut : 5, max : 20)
+   * @param date    - Date de référence (défaut : aujourd'hui)
    */
   async getTopExpenses(userId: string, period: Period, limit: number = 5, date?: Date) {
     const { from, to } = getDateRange(period, date)
@@ -174,10 +189,16 @@ export class StatsService {
   }
 
   /**
-   * Génère des conseils textuels automatiques basés sur :
-   * - les catégories qui dépassent 40% du total
-   * - le niveau de consommation du budget mensuel (80% / 100%)
-   * - une félicitation si moins de 50% du budget est consommé
+   * Génère des conseils textuels automatiques basés sur l'analyse des dépenses.
+   *
+   * Règles appliquées :
+   * - Alerte si une catégorie dépasse 40% du total des dépenses
+   * - Alerte rouge si le budget mensuel est dépassé (>= 100%)
+   * - Alerte orange si 80% du budget est consommé
+   * - Félicitation si moins de 50% du budget est utilisé
+   *
+   * @param distribution    - Répartition des dépenses par catégorie
+   * @param budgetComparison - Comparaison budget/dépenses (null si aucun budget défini)
    */
   private generateAdvice(
     distribution: { name: string; amount: number; percentage: number }[],

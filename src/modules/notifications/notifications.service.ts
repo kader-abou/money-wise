@@ -6,11 +6,19 @@ export class NotificationsService {
   constructor(private prisma: PrismaClient) {}
 
   /**
-   * Retourne les notifications d'un utilisateur paginées, triées de la plus récente à la plus ancienne.
+   * Retourne les notifications non supprimées d'un utilisateur, paginées et triées par date décroissante.
+   *
+   * @param userId    - UUID de l'utilisateur connecté
    * @param unreadOnly - Si true, retourne uniquement les notifications non lues
+   * @param page      - Numéro de page (défaut : 1)
+   * @param limit     - Nombre de notifications par page (défaut : 20)
    */
   async findAll(userId: string, unreadOnly?: boolean, page = 1, limit = 20) {
-    const where = { userId, ...(unreadOnly ? { isRead: false } : {}) }
+    const where = {
+      userId,
+      deletedAt: null,
+      ...(unreadOnly ? { isRead: false } : {}),
+    }
     const skip = (page - 1) * limit
 
     const [notifications, total] = await Promise.all([
@@ -36,10 +44,15 @@ export class NotificationsService {
 
   /**
    * Marque une notification spécifique comme lue.
-   * @throws 404 si la notification n'existe pas ou n'appartient pas à l'utilisateur
+   *
+   * @param userId - UUID de l'utilisateur connecté
+   * @param id     - Identifiant de la notification
+   * @throws 404 si la notification n'existe pas, est supprimée ou n'appartient pas à l'utilisateur
    */
   async markRead(userId: string, id: string) {
-    const notification = await this.prisma.notification.findFirst({ where: { id, userId } })
+    const notification = await this.prisma.notification.findFirst({
+      where: { id, userId, deletedAt: null },
+    })
     if (!notification) {
       throw { statusCode: 404, ...fail('NOT_FOUND', 'Notification introuvable') }
     }
@@ -47,51 +60,71 @@ export class NotificationsService {
   }
 
   /**
-   * Marque toutes les notifications non lues d'un utilisateur comme lues en une seule opération.
+   * Marque toutes les notifications non lues et non supprimées comme lues.
+   *
+   * @param userId - UUID de l'utilisateur connecté
    * @returns Le nombre de notifications mises à jour
    */
   async markAllRead(userId: string) {
     const result = await this.prisma.notification.updateMany({
-      where: { userId, isRead: false },
+      where: { userId, isRead: false, deletedAt: null },
       data: { isRead: true },
     })
     return { updated: result.count }
   }
 
   /**
-   * Supprime une notification.
+   * Soft delete : marque la notification comme supprimée sans la retirer de la base.
+   * Elle n'apparaît plus dans les listes mais reste consultable en base pour audit.
+   *
+   * @param userId - UUID de l'utilisateur connecté
+   * @param id     - Identifiant de la notification
    * @throws 404 si la notification n'existe pas ou n'appartient pas à l'utilisateur
    */
   async delete(userId: string, id: string) {
-    const notification = await this.prisma.notification.findFirst({ where: { id, userId } })
+    const notification = await this.prisma.notification.findFirst({
+      where: { id, userId, deletedAt: null },
+    })
     if (!notification) {
       throw { statusCode: 404, ...fail('NOT_FOUND', 'Notification introuvable') }
     }
-    await this.prisma.notification.delete({ where: { id } })
+    await this.prisma.notification.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    })
   }
 
   /**
-   * Retourne le nombre de notifications non lues.
+   * Retourne le nombre de notifications non lues et non supprimées.
    * Utilisé pour afficher le badge dans l'app mobile.
+   *
+   * @param userId - UUID de l'utilisateur connecté
    */
   async getUnreadCount(userId: string) {
-    const count = await this.prisma.notification.count({ where: { userId, isRead: false } })
+    const count = await this.prisma.notification.count({
+      where: { userId, isRead: false, deletedAt: null },
+    })
     return { count }
   }
 
   /**
-   * Crée une notification de rappel en base de données.
-   * Appelé par le cron des rappels (12h / 20h40 / 8h30) et les alertes budget.
-   * @param type - reminder | alert | advice | goal
+   * Crée une notification en base et envoie un push Firebase si l'utilisateur a un fcmToken.
+   * Utilisé par les cron jobs et les alertes budget générées lors de la création de dépenses.
+   *
+   * @param userId - UUID de l'utilisateur destinataire
+   * @param title  - Titre de la notification
+   * @param body   - Corps du message
+   * @param data   - Données contextuelles optionnelles (ex: { expenseId, goalId })
+   * @param type   - Type : reminder | alert | advice | goal (défaut : reminder)
    */
-  async createReminder(userId: string, title: string, body: string, data?: Record<string, unknown>) {
+  async createReminder(userId: string, title: string, body: string, data?: Record<string, unknown>, type = 'reminder') {
     const [notification, user] = await Promise.all([
       this.prisma.notification.create({
         data: {
           userId,
           title,
           body,
-          type: 'reminder',
+          type,
           data: data ? JSON.parse(JSON.stringify(data)) : undefined,
         },
       }),

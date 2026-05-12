@@ -3,8 +3,38 @@ import OpenAI from 'openai'
 import { PrismaClient } from '@prisma/client'
 import { fail } from '../../utils/response.js'
 
+/** Identifiant d'un provider IA supporté. */
 export type LLMProvider = 'anthropic' | 'google' | 'groq' | 'xai' | 'openai'
 
+/**
+ * Retourne la liste des providers qui ont une clé API définie dans l'environnement.
+ * Groq et Google sont placés en tête car ils sont gratuits et rapides.
+ */
+function availableProviders(): LLMProvider[] {
+  const all: Array<[LLMProvider, string | undefined]> = [
+    ['groq',      process.env.GROQ_API_KEY],
+    ['google',    process.env.GOOGLE_AI_API_KEY],
+    ['openai',    process.env.OPENAI_API_KEY],
+    ['anthropic', process.env.ANTHROPIC_API_KEY],
+    ['xai',       process.env.XAI_API_KEY],
+  ]
+  return all.filter(([, key]) => !!key).map(([provider]) => provider)
+}
+
+/**
+ * Mélange un tableau dans un ordre aléatoire (algorithme Fisher-Yates).
+ * Utilisé pour répartir la charge entre les providers en mode auto.
+ */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+/** Métadonnées label/modèle par provider. */
 const PROVIDERS: Record<LLMProvider, { label: string; model: string }> = {
   anthropic: { label: 'Claude Opus 4.7',          model: 'claude-opus-4-7' },
   google:    { label: 'Gemini 3 Flash Preview',    model: 'gemini-3-flash-preview' },
@@ -55,6 +85,64 @@ Réponds avec ce JSON exact (aucun texte avant ou après) :
 export class InvestmentsService {
   constructor(private prisma: PrismaClient) {}
 
+  /**
+   * Sélectionne automatiquement un provider IA disponible et retourne des conseils personnalisés.
+   *
+   * Algorithme :
+   * 1. Filtre les providers qui ont une clé API configurée.
+   * 2. Les mélange aléatoirement pour répartir la charge.
+   * 3. Essaie chaque provider dans l'ordre — si l'un échoue (rate limit, erreur réseau),
+   *    passe silencieusement au suivant.
+   * 4. Retourne le premier résultat réussi (depuis le cache ou frais).
+   *
+   * @param userId   - UUID de l'utilisateur connecté
+   * @param amount   - Montant disponible à investir
+   * @param currency - Devise (ex: XOF)
+   * @throws 503 si aucune clé API n'est configurée
+   * @throws 503 si tous les providers ont échoué, avec le détail de chaque erreur
+   */
+  async getAutoAdvice(userId: string, amount: number, currency: string) {
+    const providers = shuffle(availableProviders())
+
+    if (providers.length === 0) {
+      throw {
+        statusCode: 503,
+        ...fail('NO_PROVIDER', 'Aucune clé API IA configurée. Ajoute au moins GROQ_API_KEY, ANTHROPIC_API_KEY ou OPENAI_API_KEY.'),
+      }
+    }
+
+    const errors: string[] = []
+
+    for (const provider of providers) {
+      try {
+        return await this.getPersonalizedAdvice(userId, amount, currency, provider)
+      } catch (err: any) {
+        const msg = err?.error?.message ?? err?.message ?? String(err)
+        errors.push(`${PROVIDERS[provider].label}: ${msg}`)
+        console.warn(`[Auto] ${provider} a échoué, on essaie le suivant...`)
+      }
+    }
+
+    throw {
+      statusCode: 503,
+      ...fail('ALL_PROVIDERS_FAILED', `Tous les providers IA ont échoué. Détails : ${errors.join(' | ')}`),
+    }
+  }
+
+  /**
+   * Génère des conseils d'investissement personnalisés via un provider IA spécifique.
+   *
+   * Retourne le cache de la journée si disponible pour éviter de consommer des tokens inutilement.
+   * Sinon, collecte le contexte financier réel de l'utilisateur (dépenses, objectifs, budget)
+   * et envoie une requête à l'IA. Le résultat est mis en cache jusqu'à minuit.
+   *
+   * @param userId   - UUID de l'utilisateur connecté
+   * @param amount   - Montant disponible à investir
+   * @param currency - Devise (ex: XOF)
+   * @param provider - Provider IA à utiliser (défaut: anthropic)
+   * @throws 400 si la clé API du provider est manquante
+   * @throws 500 si la réponse de l'IA n'est pas un JSON valide
+   */
   async getPersonalizedAdvice(userId: string, amount: number, currency: string, provider: LLMProvider = 'anthropic') {
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
@@ -77,7 +165,7 @@ export class InvestmentsService {
       }
     }
 
-    // ─── Appel IA ─────────────────────────────────────────────────────────────
+    // ─── Collecte du contexte financier réel ─────────────────────────────────
     const [expenses, goals, budget] = await Promise.all([
       this.getExpensesSummary(userId),
       this.getGoalsSummary(userId),
@@ -94,6 +182,7 @@ export class InvestmentsService {
 
     const userMessage = `Analyse cette situation financière :\n\n${JSON.stringify(userContext, null, 2)}\n\n${JSON_INSTRUCTION}`
 
+    // ─── Appel au provider IA ─────────────────────────────────────────────────
     let raw: string
     switch (provider) {
       case 'anthropic': raw = await this.callAnthropic(userMessage); break
@@ -111,7 +200,7 @@ export class InvestmentsService {
       throw { statusCode: 500, ...fail('AI_PARSE_ERROR', `Réponse IA invalide (${PROVIDERS[provider].label})`) }
     }
 
-    // ─── Mettre en cache ──────────────────────────────────────────────────────
+    // ─── Mise en cache jusqu'à minuit ─────────────────────────────────────────
     const result = { amount, currency, provider: PROVIDERS[provider].label, ...parsed }
 
     await this.prisma.investmentAdviceCache.upsert({
@@ -129,6 +218,13 @@ export class InvestmentsService {
     }
   }
 
+  /**
+   * Appelle l'API Anthropic (Claude Opus 4.7) avec prompt caching et structured output.
+   * Le system prompt est mis en cache côté Anthropic pour réduire les coûts.
+   *
+   * @param userMessage - Message utilisateur contenant le contexte financier + instruction JSON
+   * @throws 400 si ANTHROPIC_API_KEY n'est pas configurée
+   */
   private async callAnthropic(userMessage: string): Promise<string> {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) throw { statusCode: 400, ...fail('MISSING_KEY', 'ANTHROPIC_API_KEY non configurée') }
@@ -147,6 +243,15 @@ export class InvestmentsService {
     return block.text
   }
 
+  /**
+   * Appelle Gemini via l'endpoint compatible OpenAI de Google AI.
+   * Détecte les troncatures (finish_reason: length) et remonte une erreur explicite.
+   *
+   * @param userMessage - Message utilisateur contenant le contexte financier + instruction JSON
+   * @throws 400 si GOOGLE_AI_API_KEY n'est pas configurée
+   * @throws 429 si la limite de 15 req/min du free tier est atteinte
+   * @throws 500 si la réponse est tronquée (max_tokens atteint)
+   */
   private async callGoogle(userMessage: string): Promise<string> {
     const apiKey = process.env.GOOGLE_AI_API_KEY
     if (!apiKey) throw { statusCode: 400, ...fail('MISSING_KEY', 'GOOGLE_AI_API_KEY non configurée') }
@@ -185,6 +290,14 @@ export class InvestmentsService {
     }
   }
 
+  /**
+   * Appelle LLaMA 3.3 70B via l'API Groq (compatible OpenAI).
+   * Groq est le provider recommandé en mode auto : gratuit et très rapide.
+   *
+   * @param userMessage - Message utilisateur contenant le contexte financier + instruction JSON
+   * @throws 400 si GROQ_API_KEY n'est pas configurée
+   * @throws 429 si la limite du free tier est atteinte (14 400 req/jour, 30 req/min)
+   */
   private async callGroq(userMessage: string): Promise<string> {
     const apiKey = process.env.GROQ_API_KEY
     if (!apiKey) throw { statusCode: 400, ...fail('MISSING_KEY', 'GROQ_API_KEY non configurée') }
@@ -216,6 +329,13 @@ export class InvestmentsService {
     }
   }
 
+  /**
+   * Appelle GPT-4o via l'API OpenAI officielle.
+   *
+   * @param userMessage - Message utilisateur contenant le contexte financier + instruction JSON
+   * @throws 400 si OPENAI_API_KEY n'est pas configurée
+   * @throws 429 si le quota OpenAI est dépassé
+   */
   private async callOpenAI(userMessage: string): Promise<string> {
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) throw { statusCode: 400, ...fail('MISSING_KEY', 'OPENAI_API_KEY non configurée') }
@@ -234,7 +354,6 @@ export class InvestmentsService {
       })
       return response.choices[0]?.message?.content ?? '{}'
     } catch (err: any) {
-      console.log("🚀 ~ InvestmentsService ~ callOpenAI ~ err:", err)
       if (err?.status === 429) {
         throw { statusCode: 429, ...fail('RATE_LIMIT', 'Limite OpenAI atteinte. Vérifie ton quota sur platform.openai.com') }
       }
@@ -242,6 +361,14 @@ export class InvestmentsService {
     }
   }
 
+  /**
+   * Appelle Grok 4 via l'API Responses de xAI (format natif, pas compatible OpenAI).
+   * Nécessite un compte xAI avec crédits sur console.x.ai.
+   *
+   * @param userMessage - Message utilisateur contenant le contexte financier + instruction JSON
+   * @throws 400 si XAI_API_KEY n'est pas configurée
+   * @throws 429 si la limite xAI est atteinte
+   */
   private async callXAI(userMessage: string): Promise<string> {
     const apiKey = process.env.XAI_API_KEY
     if (!apiKey) throw { statusCode: 400, ...fail('MISSING_KEY', 'XAI_API_KEY non configurée') }
@@ -278,6 +405,12 @@ export class InvestmentsService {
 
   // ─── Context builders ────────────────────────────────────────────────────────
 
+  /**
+   * Agrège les dépenses des 3 derniers mois par catégorie avec leur pourcentage du total.
+   * Triées de la plus élevée à la plus faible pour mettre en évidence les postes importants.
+   *
+   * @param userId - UUID de l'utilisateur
+   */
   private async getExpensesSummary(userId: string) {
     const threeMonthsAgo = new Date()
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
@@ -303,6 +436,12 @@ export class InvestmentsService {
       }))
   }
 
+  /**
+   * Retourne les objectifs d'épargne actifs avec leur progression et échéance.
+   * Permet à l'IA de conseiller en tenant compte des engagements d'épargne existants.
+   *
+   * @param userId - UUID de l'utilisateur
+   */
   private async getGoalsSummary(userId: string) {
     const goals = await this.prisma.savingGoal.findMany({
       where: { userId, status: 'ACTIVE' },
@@ -319,6 +458,12 @@ export class InvestmentsService {
     }))
   }
 
+  /**
+   * Retourne le statut du budget du mois en cours : total, dépensé, restant,
+   * et liste des catégories dépassées. Retourne null si aucun budget n'est défini.
+   *
+   * @param userId - UUID de l'utilisateur
+   */
   private async getBudgetStatus(userId: string) {
     const now = new Date()
     const budget = await this.prisma.budget.findUnique({
